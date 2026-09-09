@@ -1,7 +1,7 @@
 
 #include <Wire.h>
 
-uint8_t SW_VERSION = 3;
+uint8_t SW_VERSION = 4;
 
 #define ADC_BUFFER_BEFORE_SIZE    100
 #define ADC_BUFFER_AFTER_SIZE     400
@@ -61,6 +61,10 @@ void setup()
   average = average / 1000; // e.g. 725
   PHOTORESISTOR_ADC_AVG_INV = 1023 - average;
 
+  Wire.beginTransmission(0x02); // transmit to device #0x02
+  Wire.write((uint16_t)(PHOTORESISTOR_ADC_AVG_INV - 100));
+  Wire.endTransmission();    // stop transmitting
+
   photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV * 1.05);
 
   for (int i = 0; i < ADC_BUFFER_BEFORE_SIZE; i++)
@@ -71,12 +75,7 @@ void setup()
   //Serial.println("Average adc bits: " + String((int)average));
   Serial.println("PHOTORESISTOR_ADC_AVG_INV: " + String(PHOTORESISTOR_ADC_AVG_INV));
 
-  Serial.println("Sending init byte to verify that the I2C communication works");
-  Wire.beginTransmission(0x02); // transmit to device #0x02
-  Wire.write(0xBC);
-  Wire.endTransmission();    // stop transmitting
-  
-  //Serial.println("Sensor board - Init finished.\n");
+  Serial.println("Sensor board - Init finished.\n");
 }
 
 void loop()
