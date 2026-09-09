@@ -1,10 +1,12 @@
 
 #include <Wire.h>
 
-#define ADC_BUFFER_BEFORE_SIZE    100
-#define ADC_BUFFER_AFTER_SIZE     400
+uint8_t SW_VERSION = 2;
 
-#define ADC_CHARGE_DELAY_US       (int)(100)
+#define ADC_BUFFER_BEFORE_SIZE    100
+#define ADC_BUFFER_AFTER_SIZE     1900
+
+#define ADC_CHARGE_DELAY_US       (int)(400)
 
 #define PHOTORESISTOR_ADC_NO      A7
 
@@ -24,9 +26,21 @@ float photores_threshold;
 
 void setup()
 {
+  Serial.begin(115200);
+  delay(100);
+
+  Serial.println("\n\nFeeder Sensor board - Init started.");
+
+  Serial.println("SW version: " + String(SW_VERSION));
+
   Wire.begin();
   delay(10);
   Wire.setClock(100000); // Explicitly setting the speed to avoid a misconfiguration
+
+  Serial.println("Sending init byte to verify that the I2C communication works");
+  Wire.beginTransmission(0x02); // transmit to device #0x02
+  Wire.write(0xBC);
+  Wire.endTransmission();    // stop transmitting
 
   pinMode(PHOTORESISTOR_ADC_NO, INPUT); // reading analog voltage input from photoresistor
 
@@ -35,11 +49,6 @@ void setup()
 
   pinMode(PIN_CAPTURE_SIGNAL, INPUT);
   pinMode(PIN_TRIGGER_I2C_COM, INPUT);
-
-  Serial.begin(115200);
-  delay(100);
-
-  //Serial.println("\n\nFeeder Sensor board - Init started.");
 
   SIGNAL_GOING_HIGH = 0;
 
@@ -55,6 +64,8 @@ void setup()
   photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV * 1.035);
 
   //Serial.println("Average adc bits: " + String((int)average));
+  Serial.println("adc_buffer_inv: " + String((int)(1023 - average)));
+  
   //Serial.println("Sensor board - Init finished.\n");
 }
 
@@ -92,8 +103,12 @@ void loop()
 
     float surface_covered = 0.0;
 
+    Wire.beginTransmission(0x02); // transmit to device #0x02
+
     for (int i = SAMPLING_IDX_STOP + 1; i < ADC_BUFFER_BEFORE_SIZE; i++)
     {
+      Wire.write((int)ADC_SAMPLING_BUFFER[i]);              // sends one byte
+
       Serial.println("adc_buffer_inv: " + String(ADC_SAMPLING_BUFFER[i]));
 
       if (ADC_SAMPLING_BUFFER[i] > PHOTORESISTOR_ADC_AVG_INV)
@@ -104,10 +119,14 @@ void loop()
       {
         surface_covered -= PHOTORESISTOR_ADC_AVG_INV - ADC_SAMPLING_BUFFER[i];
       }
+
+      delay(1);
     }
 
-    for (int i = 0; i < SAMPLING_IDX_STOP; i++)
+    for (int i = 0; i < SAMPLING_IDX_STOP + 1; i++)
     {
+      Wire.write((int)ADC_SAMPLING_BUFFER[i]);              // sends one byte
+
       Serial.println("adc_buffer_inv: " + String(ADC_SAMPLING_BUFFER[i]));
 
       if (ADC_SAMPLING_BUFFER[i] > PHOTORESISTOR_ADC_AVG_INV)
@@ -118,10 +137,14 @@ void loop()
       {
         surface_covered -= PHOTORESISTOR_ADC_AVG_INV - ADC_SAMPLING_BUFFER[i];
       }
+
+      delay(1);
     }
 
     for (int i = 0; i < ADC_BUFFER_AFTER_SIZE; i++)
     {
+      Wire.write((int)ADC_SAMPLING_BUFFER_AFTER[i]);              // sends one byte
+
       Serial.println("adc_buffer_inv: " + String(ADC_SAMPLING_BUFFER_AFTER[i]));
 
       if (ADC_SAMPLING_BUFFER_AFTER[i] > PHOTORESISTOR_ADC_AVG_INV)
@@ -132,7 +155,11 @@ void loop()
       {
         surface_covered -= PHOTORESISTOR_ADC_AVG_INV - ADC_SAMPLING_BUFFER_AFTER[i];
       }
+
+      delay(1);
     }
+
+    Wire.endTransmission();    // stop transmitting
 
     SAMPLING_IDX = 0;
     SAMPLING_IDX_STOP = 0;
