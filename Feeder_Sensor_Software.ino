@@ -21,6 +21,9 @@ const int PIN_TRIGGER_I2C_COM = A2;
 
 uint8_t NUMBER_OF_PELLETS;
 
+#define PELLET_START_THR    30    // normalized: above baseline, start of pellet
+#define PELLET_END_THR      15    // normalized: below this, end of pellet
+
 float average = 0;
 
 uint16_t ADC_SAMPLING_BUFFER[ADC_BUFFER_BEFORE_SIZE + ADC_BUFFER_AFTER_SIZE];
@@ -65,7 +68,7 @@ void setup()
   Wire.write((uint16_t)(PHOTORESISTOR_ADC_AVG_INV - 100));
   Wire.endTransmission();    // stop transmitting
 
-  photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV * 1.05);
+  photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV + PELLET_START_THR);
 
   for (int i = 0; i < ADC_BUFFER_BEFORE_SIZE; i++)
   {
@@ -88,6 +91,53 @@ void loop()
 
   // At index 0 we we always hold the oldest sample collected
 
+  // --- Debug: show enable pin changes ---
+  static int last_a1 = -1;
+  static int last_a2 = -1;
+  int a1 = digitalRead(PIN_CAPTURE_SIGNAL);    // A1
+  int a2 = digitalRead(PIN_TRIGGER_I2C_COM);   // A2
+
+  if ((a1 != last_a1) || (a2 != last_a2))
+  {
+    Serial.println("A1 = " + String(a1) + "   A2 (enable) = " + String(a2));
+    last_a1 = a1;
+    last_a2 = a2;
+  }
+  // --------------------------------------
+
+  static bool was_enabled = false;
+
+  if (digitalRead(PIN_TRIGGER_I2C_COM) == LOW)
+  {
+    was_enabled = false;
+    return;   // not dispensing: LEDs may be off, don't count anything
+  }
+
+  if (was_enabled == false)
+  {
+    // Dispense just started, LEDs are on and warmed up: take a fresh baseline
+    was_enabled = true;
+
+    uint32_t sum = 0;
+    for (int i = 0; i < 200; i++)
+    {
+      (void)analogRead(PHOTORESISTOR_ADC_NO);
+      delayMicroseconds(ADC_CHARGE_DELAY_US);
+      sum += 1023 - analogRead(PHOTORESISTOR_ADC_NO);
+    }
+    PHOTORESISTOR_ADC_AVG_INV = sum / 200;
+    photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV +PELLET_START_THR);
+
+    for (int i = 0; i < ADC_BUFFER_BEFORE_SIZE; i++)
+    {
+      ADC_SAMPLING_BUFFER[i] = PHOTORESISTOR_ADC_AVG_INV;
+    }
+    SIGNAL_GOING_HIGH = 0;
+
+    Serial.println("Baseline at dispense start: " + String(PHOTORESISTOR_ADC_AVG_INV));
+    return;
+  }
+
   // The for loop shift cycle of 100 elements uses approx. It takes approx. 50us execution time on Arduino Nano Every.
   for (int i = 0; i < ADC_BUFFER_BEFORE_SIZE - 1; i++)
   {
@@ -102,9 +152,9 @@ void loop()
     digitalWrite(PIN_DISPENSING_SUCCESSFUL, HIGH); // Less than 1s execution time on Arduino Nano Every. This is negligeable for our case.
     delayMicroseconds(ADC_CHARGE_DELAY_US);
 
-    //Serial.println("Pellet detected");
+    Serial.println("Pellet detected");
     //Serial.println("adc_bits_inv: " + String(adc_bits_inv));
-    //Serial.println("photores_threshold: " + String(photores_threshold));
+    Serial.println("photores_threshold: " + String(photores_threshold));
 
     for (int i = ADC_BUFFER_BEFORE_SIZE; i < ADC_BUFFER_BEFORE_SIZE + ADC_BUFFER_AFTER_SIZE; i++)
     {
@@ -122,7 +172,7 @@ void loop()
     {
       if (SIGNAL_GOING_HIGH == 0)
       {
-        float photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV * 1.05);
+        float photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV +PELLET_START_THR);
         if (ADC_SAMPLING_BUFFER[i] >= (uint16_t)photores_threshold)
         {
           SIGNAL_GOING_HIGH = 1;
@@ -133,7 +183,7 @@ void loop()
       }
       else
       {
-        float photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV * 1.025);
+        float photores_threshold = (float)(PHOTORESISTOR_ADC_AVG_INV +PELLET_END_THR);
         if (ADC_SAMPLING_BUFFER[i] <= (uint16_t)photores_threshold)
         {
           SIGNAL_GOING_HIGH = 0;
@@ -144,13 +194,14 @@ void loop()
     Wire.beginTransmission(0x02); // transmit to device #0x02
     Wire.write((int)NUMBER_OF_PELLETS);              // sends one byte
     Wire.endTransmission();    // stop transmitting
-
+    Serial.println("ADC_SAMPLING_BUFFER: " + String(NUMBER_OF_PELLETS));
+/*
     // Sending the entire signal on the Serial port (including the buffer collected before trigger)
     for (int i = 0; i < ADC_BUFFER_BEFORE_SIZE + ADC_BUFFER_AFTER_SIZE; i++)
     {
       Serial.println("ADC_SAMPLING_BUFFER: " + String(ADC_SAMPLING_BUFFER[i]));
     }
-
+*/
     // Cleaning the buffer before trigger
     for (int i = 0; i < ADC_BUFFER_BEFORE_SIZE; i++)
     {
