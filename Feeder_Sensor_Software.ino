@@ -1,7 +1,7 @@
 
 #include <Wire.h>
 
-uint8_t SW_VERSION = 4;
+uint8_t SW_VERSION = 5;
 
 #define ADC_BUFFER_BEFORE_SIZE    100
 #define ADC_BUFFER_AFTER_SIZE     400
@@ -21,8 +21,8 @@ const int PIN_TRIGGER_I2C_COM = A2;
 
 uint8_t NUMBER_OF_PELLETS;
 
-#define PELLET_START_THR    30    // normalized: above baseline, start of pellet
-#define PELLET_END_THR      15    // normalized: below this, end of pellet
+#define PELLET_START_THR    50    // normalized: above baseline, start of pellet
+#define PELLET_END_THR      30    // normalized: below this, end of pellet
 
 float average = 0;
 
